@@ -1,0 +1,20 @@
+# Docker 이미지에 포함하지 않을 목록
+
+# 가상환경 / 캐시
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# 환경변수 / 비밀값
+.env
+
+# 개발 도구 / 버전관리
+.vscode/
+.git/
+.gitignore
+*.log
+
+# 문서 / 개발용 스크립트 (런타임에 불필요)
+README.md
+.env.example
