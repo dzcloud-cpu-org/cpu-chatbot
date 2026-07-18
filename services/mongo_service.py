@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from pymongo import MongoClient
 
@@ -47,13 +47,59 @@ def _today() -> str:
     return date.today().strftime("%Y-%m-%d")
 
 
-def _base_conditions() -> list[dict]:
-    """운영 중 + 종료되지 않은 팝업만 남기는 공통 조건."""
-    today = _today()
-    return [
+def _week_range(today: date) -> tuple[str, str]:
+    """
+    today가 속한 주(월요일~일요일)의 시작일/종료일을 문자열("YYYY-MM-DD")로 반환한다.
+
+    예) today = 2025-01-16(목) → ("2025-01-13", "2025-01-19")
+    """
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    return monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
+
+
+# =============================================================================
+# date_filter("today" / "this_week" / null) → MongoDB 날짜 조건 변환
+#
+# 1단계 Gemini(SEARCH_CONDITION_PROMPT)는 오늘이 정확히 며칠인지 알 수 없으므로
+# "today" / "this_week" / null 중 하나로만 분류하고,
+# 실제 날짜 범위 계산(오늘 날짜, 이번주 월~일 등)은 여기서 서버가 직접 수행한다.
+# =============================================================================
+
+def _base_conditions(date_filter: str | None = None) -> list[dict]:
+    """
+    운영 중(아직 종료되지 않은) 팝업만 남기는 공통 조건.
+
+    - status가 "active"이고, end_date가 오늘 이후(아직 종료 전)인 것은 항상 조건에 포함한다.
+    - date_filter가 없거나 "today"인 경우
+      → "지금 진행 중"인 팝업만 남기도록 start_date <= 오늘 조건을 추가한다.
+        (기존에는 end_date >= 오늘 조건만 있어서, 아직 시작하지 않은
+         '오픈 예정' 팝업까지 검색에 포함되는 문제가 있었다.)
+    - date_filter가 "this_week"인 경우
+      → 이번주(월~일) 기간과 팝업의 운영기간(start_date~end_date)이
+        하루라도 겹치면 포함되도록 overlap 조건으로 대체한다.
+        (이번주에 아직 시작 전인 팝업, 이번주에 이미 시작해서
+         계속 진행 중인 팝업을 모두 포함하기 위함)
+    """
+    today_str = _today()
+
+    conditions: list[dict] = [
         {"status": "active"},
-        {"end_date": {"$gte": today}},
+        {"end_date": {"$gte": today_str}},
     ]
+
+    if date_filter == "this_week":
+        _, week_end = _week_range(date.today())
+        # 이번주 종료일보다 늦게 시작하는 팝업은 이번주와 겹치지 않으므로 제외.
+        # (end_date >= 오늘 조건은 위에서 이미 적용되어 있어,
+        #  이번주가 시작되기 전에 종료된 팝업은 자연히 걸러진다.)
+        conditions.append({"start_date": {"$lte": week_end}})
+    else:
+        # date_filter가 "today"이거나 없는 경우(기본값) → 오늘 기준으로
+        # 실제 운영 중인 팝업만 남긴다.
+        conditions.append({"start_date": {"$lte": today_str}})
+
+    return conditions
 
 
 # =============================================================================
@@ -150,13 +196,16 @@ def search_popup(keywords: list[str], limit: int = 5) -> list[dict]:
 #     "keywords": ["포토존", "감성"],
 #     "reservation": null,
 #     "operation": null,
-#     "information": null
+#     "information": null,
+#     "date_filter": "this_week"
 # }
 #
 # intent, purpose, reservation, operation, information 값 자체는
 # 현재 컬렉션(cpu_popga)에 별도 필드로 저장되어 있지 않으므로
 # 검색 키워드로는 사용하지 않는다.
 # (해당 값들은 2단계 Gemini가 최종 답변의 "질문 의도 판단"에만 사용한다.)
+#
+# date_filter는 예외적으로 실제 쿼리 조건(start_date/end_date)에 직접 반영한다.
 # =============================================================================
 
 def _build_keywords_from_condition(search_condition: dict) -> list[str]:
@@ -200,10 +249,21 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
     MongoDB에서 조건에 맞는 팝업을 검색한다.
 
     - 운영 중(active)이고 종료되지 않은 팝업만 조회
+    - date_filter("today"/"this_week"/null)에 따라 start_date/end_date 범위를
+      실제 날짜로 변환하여 조건에 반영 (_base_conditions 참고)
     - intent별로 검색 필드를 분리해 불필요한 필드 검색을 최소화
+
+    주의(예약/reservation intent 관련):
+    현재 컬렉션에는 "실시간 예약 가능 여부"를 나타내는 필드가 없고,
+    additional_information에 예약 관련 문구가 "등록되어 있는지" 여부만
+    텍스트로 매칭할 수 있다. 즉 "지금 예약 가능한가요?" 같은 질문에는
+    근본적으로 정확히 답할 수 없으며, 실시간 예약 가능 여부를 확인하려면
+    크롤링/DB 설계 단계에서 별도 필드(예: reservation_available)를
+    추가하는 작업이 선행되어야 한다.
     """
     intent = search_condition.get("intent")
-    conditions = _base_conditions()
+    date_filter = search_condition.get("date_filter")
+    conditions = _base_conditions(date_filter)
 
     if intent == "popup_info":
         popup_name = search_condition.get("popup_name")
@@ -222,6 +282,7 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
 
     elif intent == "reservation":
         # 예약 관련 문구가 additional_information에 있는 팝업만 조회
+        # (위 주의사항 참고: 텍스트 매칭 수준일 뿐 실시간 예약 가능 여부는 아님)
         conditions += _popup_name_or_keyword_conditions(search_condition)
         conditions.append({
             "additional_information": {"$regex": "예약|사전예약|네이버", "$options": "i"}

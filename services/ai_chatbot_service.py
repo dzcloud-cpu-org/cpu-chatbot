@@ -20,9 +20,12 @@ Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
     ▼
 1) Gemini 1단계 호출   - SEARCH_CONDITION_PROMPT
                          자연어 질문 → 검색 조건(JSON) 생성
+                         (date_filter 판단을 돕기 위해 오늘 날짜를 함께 전달)
     │
     ▼
 2) MongoDB 검색        - services/mongo_service.search_popup_by_condition()
+                         (search_condition의 date_filter를 서버에서
+                          실제 날짜 범위로 변환하여 쿼리에 반영)
     │
     ▼
 3) 결과 정제            - 중복 제거 + 상위 N개 제한
@@ -42,6 +45,7 @@ Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
 from __future__ import annotations
 
 import time
+from datetime import date
 from typing import Any, Dict, List
 
 from prompts.chatbot_prompts import (
@@ -75,11 +79,24 @@ async def _build_search_condition(user_question: str) -> Dict[str, Any]:
     Gemini에게 SEARCH_CONDITION_PROMPT(system) + 사용자 질문(user)을 전달하여
     MongoDB 검색 조건(JSON)을 생성한다.
 
+    Gemini는 학습 시점 이후의 "현재 날짜"를 알 수 없으므로,
+    "오늘"/"이번주" 같은 표현을 정확히 분류할 수 있도록
+    서버에서 계산한 오늘 날짜(date.today())를 User Prompt에 함께 넣어준다.
+
+    다만 Gemini가 직접 날짜 산술(예: 이번주 월~일 계산)을 하지는 않으며,
+    date_filter를 "today" / "this_week" / null 중 하나로 분류하는 역할만 한다.
+    실제 날짜 범위 계산 및 쿼리 변환은 mongo_service.py에서 서버가 처리한다.
+
     generate_structured_response()는 response_mime_type="application/json"으로
     호출되므로, 반환값은 이미 dict(JSON)로 파싱되어 있다.
     """
 
-    user_prompt = build_search_condition_user_prompt(user_question)
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    user_prompt = build_search_condition_user_prompt(
+        user_question=user_question,
+        today_str=today_str,
+    )
 
     search_condition = await generate_structured_response(
         system_prompt=SEARCH_CONDITION_PROMPT,
@@ -278,6 +295,9 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
 
     # -------------------------------------------------------
     # 1) 검색 조건 생성 (Gemini 1단계)
+    #
+    # date_filter("today" / "this_week" / null)를 정확히 판단할 수 있도록
+    # _build_search_condition() 내부에서 오늘 날짜를 함께 전달한다.
     # -------------------------------------------------------
     condition_start = time.perf_counter()
 
@@ -300,6 +320,10 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
 
     # -------------------------------------------------------
     # 2) MongoDB 검색
+    #
+    # search_condition의 date_filter 값("today"/"this_week"/null)을
+    # 실제 날짜 범위로 변환하는 작업은 mongo_service.py에서 수행한다.
+    # (Gemini는 분류만 하고, 날짜 산술은 서버가 담당)
     # -------------------------------------------------------
     mongo_start = time.perf_counter()
 
@@ -327,7 +351,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
 
     # -------------------------------------------------------
     # 검색 결과가 없으면 2단계 Gemini 호출 없이 즉시 응답한다.
-    # (CHATBOT_RESPONSE_PROMPT 규칙 6번과 동일한 문구를
+    # (CHATBOT_RESPONSE_PROMPT 규칙 10번과 동일한 문구를
     #  코드 레벨에서 먼저 처리해 불필요한 Gemini 호출을 줄인다.)
     # -------------------------------------------------------
     if not search_results:
