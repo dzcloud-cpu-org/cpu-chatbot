@@ -116,38 +116,98 @@ def _deduplicate(results: List[dict]) -> List[dict]:
 
 def _build_popup_info_text(results: List[dict]) -> str:
     """
-    MongoDB 검색 결과 리스트를 Gemini(2단계)에게 전달할 텍스트로 변환한다.
+    MongoDB 검색 결과를 Gemini(2단계)에게 전달할 텍스트로 변환한다.
 
-    - 원본 dict를 그대로 전달하지 않고 사람이 읽기 좋은 형태로 가공하는 이유:
-      Gemini가 JSON key를 그대로 답변에 노출하는 것을 방지하고,
-      필요한 필드만 명확하게 전달하기 위함.
+    개선사항
+    --------------------------------------------------------------------
+    1. 운영시간(opening_hours) 추가
+    2. 예약/추가 안내(additional_information) 추가
+    3. 웨이팅 정보(waiting_info) 추가
+    4. 상세 페이지 URL(source_url) 추가
+    5. List/Dict 형태의 데이터를 사람이 읽기 쉬운 문자열로 변환
+    --------------------------------------------------------------------
     """
 
     popup_info = ""
 
     for idx, popup in enumerate(results, start=1):
+
+        # --------------------------------------------------
+        # 운영시간(List → 문자열)
+        # --------------------------------------------------
+        opening_hours = popup.get("opening_hours") or []
+
+        if opening_hours:
+            opening_hours = "\n".join(opening_hours)
+        else:
+            opening_hours = "정보 없음"
+
+        # --------------------------------------------------
+        # 예약/추가 안내
+        # --------------------------------------------------
+        additional_information = (
+            popup.get("additional_information")
+            or "정보 없음"
+        )
+
+        # --------------------------------------------------
+        # 웨이팅 정보(Dict → 문자열)
+        # --------------------------------------------------
+        waiting_info = popup.get("waiting_info") or {}
+
+        waiting_message = waiting_info.get(
+            "waiting_zone",
+            "정보 없음"
+        )
+
+        # --------------------------------------------------
+        # 상세 페이지 URL
+        # --------------------------------------------------
+        source_url = popup.get(
+            "source_url",
+            "정보 없음"
+        )
+
+        # --------------------------------------------------
+        # Gemini 전달용 텍스트 생성
+        # --------------------------------------------------
         popup_info += f"""
-            [{idx}]
+        [{idx}]
 
-            팝업명 :
-            {popup.get("title", "정보 없음")}
+        팝업명 :
+        {popup.get("title", "정보 없음")}
 
-            위치 :
-            {popup.get("region", "정보 없음")}
+        위치 :
+        {popup.get("region", "정보 없음")}
 
-            기간 :
-            {popup.get("start_date", "정보 없음")}
-            ~
-            {popup.get("end_date", "정보 없음")}
+        주소 :
+        {popup.get("address", "정보 없음")}
 
-            카테고리 :
-            {popup.get("category", "정보 없음")}
+        기간 :
+        {popup.get("start_date", "정보 없음")}
+        ~
+        {popup.get("end_date", "정보 없음")}
 
-            상세 :
-            {popup.get("content", "정보 없음")}
+        카테고리 :
+        {popup.get("category", "정보 없음")}
 
-            ------------------------
-            """
+        운영시간 :
+        {opening_hours}
+
+        예약/안내 :
+        {additional_information}
+
+        웨이팅 :
+        {waiting_message}
+
+        상세 :
+        {popup.get("content", "정보 없음")}
+
+        상세페이지 :
+        {source_url}
+
+        ------------------------
+        """
 
     return popup_info
 
@@ -251,7 +311,13 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
     search_results = _deduplicate(search_results)
     search_results = search_results[:MAX_RESULTS_FOR_GEMINI]
 
+    popup_info = _build_popup_info_text(search_results)
+
     print("=" * 80)
+    print("Gemini Search condition")
+    print(search_condition)
+    print("popup_info")
+    print(popup_info)
     print("사용자 질문 :", user_question)
     print("검색 조건 :", search_condition)
     print("검색 결과 개수 :", len(search_results))

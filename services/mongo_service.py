@@ -1,7 +1,8 @@
 import os
+import re
+from datetime import date
 
 from pymongo import MongoClient
-
 
 # =============================================================================
 # MongoDB 연결
@@ -18,163 +19,118 @@ from pymongo import MongoClient
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://192.168.0.154:27017")
 
 client = MongoClient(MONGODB_URI)
-
-
 db = client["cpu_popup_db"]
-
 collection = db["cpu_popga"]
 
+PROJECTION_BASIC = {
+    "_id": 0,
+    "title": 1,
+    "region": 1,
+    "category": 1,
+    "address": 1,
+    "content": 1,
+    "start_date": 1,
+    "end_date": 1,
+    "thumbnail_url": 1,
+    "source_url": 1,
+}
+
+PROJECTION_EXTENDED = {
+    **PROJECTION_BASIC,
+    "opening_hours": 1,
+    "additional_information": 1,
+    "waiting_info": 1,
+}
+
+
+def _today() -> str:
+    return date.today().strftime("%Y-%m-%d")
+
+
+def _base_conditions() -> list[dict]:
+    """운영 중 + 종료되지 않은 팝업만 남기는 공통 조건."""
+    today = _today()
+    return [
+        {"status": "active"},
+        {"end_date": {"$gte": today}},
+    ]
 
 
 # =============================================================================
-# 팝업 검색 함수
+# 동의어 처리
 #
-# 사용자 질문에서 추출한 핵심 키워드를 받아
-# MongoDB에서 조건에 맞는 팝업 데이터를 검색한다.
+# 사용자가 쓰는 표현과 실제로 팝업 데이터에 저장된 표현이 다를 수 있다.
+# 예) 사용자는 "운영시간"이라 묻지만 데이터에는 "영업시간"으로만 적혀있는 경우
 #
-# 기존 방식:
-# keyword 1개씩 검색
-# 서울 OR 캐릭터 OR 현대
-#
-# 문제:
-# 검색 범위가 넓어 관련 없는 팝업도 많이 조회됨
-#
-#
-# 변경 방식:
-# 여러 키워드를 AND 조건으로 검색
-#
-# 예)
-# ["서울", "캐릭터"]
-#
-# 결과:
-# 서울이라는 조건 만족
-# AND
-# 캐릭터라는 조건 만족
-#
-# => 더 정확한 검색 결과 반환
-#
-# 추후 RAG(Qdrant) 적용 시에도
-# 동일한 검색 인터페이스 유지 가능
+# 키워드가 아래 그룹에 속하면, 단일 키워드 대신
+# "운영시간|영업시간|오픈시간" 같은 정규식 alternation으로 검색해서
+# 표현이 달라도 매칭되도록 한다.
 # =============================================================================
 
+_SYNONYM_GROUPS: list[list[str]] = [
+    ["운영시간", "영업시간", "오픈시간", "오픈 시간", "영업 시간"],
+    ["예약", "사전예약", "네이버예약", "네이버 예약", "예약제"],
+    ["웨이팅", "대기", "대기시간", "줄서기"],
+    ["주차", "주차장", "발렛"],
+    ["입장료", "관람료", "티켓", "입장권"],
+]
 
-def search_popup(keywords: list[str]):
+# 빠른 조회를 위해 "키워드 → 동의어 그룹" 매핑을 미리 만들어둔다.
+_SYNONYM_LOOKUP: dict[str, list[str]] = {
+    word: group
+    for group in _SYNONYM_GROUPS
+    for word in group
+}
 
 
-    # =====================================================
-    # 키워드별 검색 조건 생성
-    #
-    # 각 키워드는 제목, 지역, 주소, 카테고리, 내용 중
-    # 하나라도 포함되어야 한다.
-    #
-    # 예:
-    #
-    # keyword = "서울"
-    #
-    # title OR region OR address OR category OR content
-    #
-    # keyword = "캐릭터"
-    #
-    # title OR region OR address OR category OR content
-    #
-    # 두 조건은 AND로 연결
-    # =====================================================
+def _expand_synonym(keyword: str) -> str:
+    """
+    키워드가 동의어 그룹에 속하면 "A|B|C" 형태의 정규식으로 확장하고,
+    속하지 않으면 원래 키워드를 그대로 반환한다.
+    """
+    group = _SYNONYM_LOOKUP.get(keyword)
+    if not group:
+        return keyword
 
-    query = {
-        "$and": [
-            {
-                "$or": [
-                    {
-                        "title": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    },
-                    {
-                        "region": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    },
-                    {
-                        "address": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    },
-                    {
-                        "category": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    },
-                    {
-                        "content": {
-                            "$regex": keyword,
-                            "$options": "i"
-                        }
-                    }
-                ]
-            }
-            for keyword in keywords
+    return "|".join(re.escape(word) for word in group)
+
+
+def _keyword_or_condition(keyword: str, fields: list[str]) -> dict:
+    """지정된 필드 중 하나라도 keyword(동의어 포함)를 포함하면 매칭되는 $or 조건."""
+    pattern = _expand_synonym(keyword)
+    return {
+        "$or": [
+            {field: {"$regex": pattern, "$options": "i"}}
+            for field in fields
         ]
     }
 
 
-
-    # =====================================================
-    # Projection
-    #
-    # 필요한 데이터만 조회
-    #
-    # 이유:
-    # - Gemini에게 전달할 데이터 크기 감소
-    # - 응답 속도 개선
-    # - 추후 Qdrant RAG 검색 결과와 동일한 구조 유지
-    # =====================================================
-
-    projection = {
-
-        "_id": 0,
-
-        "title": 1,
-
-        "region": 1,
-
-        "category": 1,
-
-        "address": 1,
-
-        "content": 1,
-
-        "start_date": 1,
-
-        "end_date": 1,
-
-        "thumbnail_url": 1,
-
-        "source_url": 1
-
-    }
+# 전체 필드 대상 검색 (title/region/address/category/content)
+_FULL_SEARCH_FIELDS = ["title", "region", "address", "category", "content"]
+# 제목/본문만 대상으로 하는 좁은 검색 (reservation/operation 등에서 사용)
+_TITLE_CONTENT_FIELDS = ["title", "content"]
 
 
+# =============================================================================
+# 팝업 검색 함수 (키워드 리스트 기반)
+#
+# 여러 키워드를 AND 조건으로 검색한다.
+# 예) ["서울", "캐릭터"] → "서울" 조건 만족 AND "캐릭터" 조건 만족
+#
+# 추후 RAG(Qdrant) 적용 시에도 동일한 검색 인터페이스 유지 가능
+# =============================================================================
 
-    # =====================================================
-    # MongoDB 검색
-    #
-    # 최대 5개 반환
-    # =====================================================
+def search_popup(keywords: list[str], limit: int = 5) -> list[dict]:
+    conditions = _base_conditions()
+    conditions += [
+        _keyword_or_condition(keyword, _FULL_SEARCH_FIELDS)
+        for keyword in keywords
+    ]
 
-    result = list(
-        collection.find(
-            query,
-            projection
-        ).limit(5)
-    )
+    query = {"$and": conditions}
 
-
-    return result
-
+    return list(collection.find(query, PROJECTION_BASIC).limit(limit))
 
 
 # =============================================================================
@@ -197,42 +153,21 @@ def search_popup(keywords: list[str]):
 #     "information": null
 # }
 #
-# 처리 방식:
-# 1) popup_name, location, category, keywords 값을
-#    하나의 "검색 키워드 리스트"로 합친다.
-#    (null / 빈 문자열은 제외 → "언급하지 않은 값은 검색 조건에 넣지 않는다")
-# 2) 합쳐진 키워드는 search_popup()과 동일하게
-#    "키워드별 OR 검색 + 키워드 간 AND 검색" 방식으로 쿼리를 만든다.
-#    (예: location="성수", category="캐릭터"
-#         → (title|region|address|category|content에 "성수" 포함)
-#           AND
-#           (title|region|address|category|content에 "캐릭터" 포함))
-# 3) 키워드가 하나도 없으면(순수 잡담 등) 빈 리스트를 반환한다.
-#    → 조건 없이 전체 데이터를 반환하면 Gemini가 관련 없는 팝업까지
-#      답변에 사용할 위험이 있기 때문에, 이 경우는 검색 자체를 하지 않는다.
+# intent, purpose, reservation, operation, information 값 자체는
+# 현재 컬렉션(cpu_popga)에 별도 필드로 저장되어 있지 않으므로
+# 검색 키워드로는 사용하지 않는다.
+# (해당 값들은 2단계 Gemini가 최종 답변의 "질문 의도 판단"에만 사용한다.)
 # =============================================================================
 
-
 def _build_keywords_from_condition(search_condition: dict) -> list[str]:
-    """
-    검색 조건(JSON) → MongoDB 검색용 키워드 리스트 변환
-
-    intent, purpose, reservation, operation, information은
-    현재 컬렉션(cpu_popga)에 별도 필드로 저장되어 있지 않으므로
-    검색 키워드로는 사용하지 않는다.
-    (해당 값들은 2단계 Gemini가 최종 답변의 "질문 의도 판단"에만 사용한다.)
-    """
-
+    """검색 조건(JSON) → MongoDB 검색용 키워드 리스트 변환 (중복/빈값 제거, 순서 유지)."""
     raw_values = [
         search_condition.get("popup_name"),
         search_condition.get("location"),
         search_condition.get("category"),
+        *(search_condition.get("keywords") or []),
     ]
 
-    # keywords는 리스트이므로 별도로 풀어서 합친다.
-    raw_values.extend(search_condition.get("keywords") or [])
-
-    # None, 빈 문자열, 중복 제거 (순서는 유지)
     keywords: list[str] = []
     for value in raw_values:
         if value and value not in keywords:
@@ -241,51 +176,87 @@ def _build_keywords_from_condition(search_condition: dict) -> list[str]:
     return keywords
 
 
-def search_popup_by_condition(search_condition: dict, limit: int = 5):
+def _popup_name_or_keyword_conditions(search_condition: dict) -> list[dict]:
     """
-    1단계 Gemini가 생성한 검색 조건(JSON)을 받아 MongoDB에서 팝업을 검색한다.
-
-    반환값은 search_popup()과 동일한 필드 구조를 가지므로,
-    chatbot_service 쪽에서 두 함수를 동일한 방식으로 사용할 수 있다.
+    popup_name이 있으면 title 검색으로 좁히고,
+    없으면 keywords를 title/content 대상으로 검색한다.
+    reservation / operation intent에서 공통으로 사용.
     """
+    popup_name = search_condition.get("popup_name")
 
-    keywords = _build_keywords_from_condition(search_condition)
+    if popup_name:
+        return [{"title": {"$regex": popup_name, "$options": "i"}}]
 
-    # 검색에 사용할 키워드가 하나도 없으면 빈 결과를 반환한다.
-    if not keywords:
-        return []
+    keywords = search_condition.get("keywords") or []
+    return [
+        _keyword_or_condition(keyword, _TITLE_CONTENT_FIELDS)
+        for keyword in keywords
+    ]
 
-    # 키워드 조합 쿼리 생성 방식은 search_popup()과 동일하다.
-    query = {
-        "$and": [
-            {
-                "$or": [
-                    {"title": {"$regex": keyword, "$options": "i"}},
-                    {"region": {"$regex": keyword, "$options": "i"}},
-                    {"address": {"$regex": keyword, "$options": "i"}},
-                    {"category": {"$regex": keyword, "$options": "i"}},
-                    {"content": {"$regex": keyword, "$options": "i"}},
-                ]
-            }
+
+def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[dict]:
+    """
+    1단계 Gemini가 생성한 검색 조건(JSON)을 받아
+    MongoDB에서 조건에 맞는 팝업을 검색한다.
+
+    - 운영 중(active)이고 종료되지 않은 팝업만 조회
+    - intent별로 검색 필드를 분리해 불필요한 필드 검색을 최소화
+    """
+    intent = search_condition.get("intent")
+    conditions = _base_conditions()
+
+    if intent == "popup_info":
+        popup_name = search_condition.get("popup_name")
+        if popup_name:
+            conditions.append({"title": {"$regex": popup_name, "$options": "i"}})
+
+    elif intent == "location":
+        location = search_condition.get("location")
+        if location:
+            conditions.append(_keyword_or_condition(location, ["region", "address"]))
+
+    elif intent == "category":
+        category = search_condition.get("category")
+        if category:
+            conditions.append({"category": {"$regex": category, "$options": "i"}})
+
+    elif intent == "reservation":
+        # 예약 관련 문구가 additional_information에 있는 팝업만 조회
+        conditions += _popup_name_or_keyword_conditions(search_condition)
+        conditions.append({
+            "additional_information": {"$regex": "예약|사전예약|네이버", "$options": "i"}
+        })
+
+    elif intent == "operation":
+        # opening_hours 필드가 존재하는 팝업만 조회
+        conditions += _popup_name_or_keyword_conditions(search_condition)
+        conditions.append({"opening_hours": {"$exists": True}})
+
+    elif intent == "information":
+        # 주소/추가 안내가 있는 팝업 조회
+        conditions.append({
+            "$or": [
+                {"address_detail": {"$exists": True}},
+                {"additional_information": {"$exists": True}},
+            ]
+        })
+
+    else:
+        # recommend / review 등 그 외 intent → 지역/카테고리/키워드 종합 검색
+        location = search_condition.get("location")
+        if location:
+            conditions.append(_keyword_or_condition(location, ["region", "address"]))
+
+        category = search_condition.get("category")
+        if category:
+            conditions.append({"category": {"$regex": category, "$options": "i"}})
+
+        keywords = search_condition.get("keywords") or []
+        conditions += [
+            _keyword_or_condition(keyword, _TITLE_CONTENT_FIELDS)
             for keyword in keywords
         ]
-    }
 
-    projection = {
-        "_id": 0,
-        "title": 1,
-        "region": 1,
-        "category": 1,
-        "address": 1,
-        "content": 1,
-        "start_date": 1,
-        "end_date": 1,
-        "thumbnail_url": 1,
-        "source_url": 1,
-    }
+    query = {"$and": conditions}
 
-    result = list(
-        collection.find(query, projection).limit(limit)
-    )
-
-    return result
+    return list(collection.find(query, PROJECTION_EXTENDED).limit(limit))

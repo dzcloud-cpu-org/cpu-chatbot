@@ -1,3 +1,4 @@
+# chatbot_service.py
 from utils.keyword_utils import extract_keywords
 from services.mongo_service import search_popup
 from services.gemini_service import generate_chat_response
@@ -174,25 +175,27 @@ async def generate_chat_response_service(user_question: str):
     for idx, popup in enumerate(search_results, start=1):
 
         popup_info += f"""
-            [{idx}]
+        [{idx}]
 
-            팝업명 :
-            {popup.get("title", "정보 없음")}
+        팝업명 :
+        {popup.get("title", "정보 없음")}
 
-            위치 :
-            {popup.get("region", "정보 없음")}
+        위치 :
+        {popup.get("region", "정보 없음")}
 
-            기간 :
-            {popup.get("start_date", "정보 없음")}
-            ~
-            {popup.get("end_date", "정보 없음")}
+        기간 :
+        {popup.get("start_date", "정보 없음")}
+        ~
+        {popup.get("end_date", "정보 없음")}
 
-            카테고리 :
-            {popup.get("category", "정보 없음")}
+        카테고리 :
+        {popup.get("category", "정보 없음")}
 
+        상세 페이지 :
+        {popup.get("source_url", "정보 없음")}
 
-            ------------------------
-            """
+    ------------------------
+"""
 
 
 
