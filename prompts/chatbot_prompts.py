@@ -106,6 +106,32 @@ keywords
 reservation
 operation
 information
+date_filter
+
+--------------------------------------------------
+
+# date_filter (날짜 조건)
+
+사용자가 "오늘", "지금", "이번주", "이번 주말" 등
+날짜/기간과 관련된 표현을 사용했는지 판단하여
+아래 값 중 하나로만 분류합니다.
+
+- "today"
+  - 예: "오늘 가볼만한 팝업", "지금 운영중인 팝업", "오늘 문 여는 곳"
+
+- "this_week"
+  - 예: "이번주에 갈만한 곳", "이번 주말에 갈만한 팝업", "이번주 오픈하는 팝업"
+
+- null
+  - 날짜/기간에 대한 언급이 전혀 없는 경우
+
+주의:
+- 당신은 오늘이 정확히 몇 년 몇 월 며칠인지 알 수 없습니다.
+  (참고용으로 User Prompt에 오늘 날짜가 함께 제공될 수 있으나,
+   실제 날짜 범위 계산은 서버에서 처리하므로
+   당신은 위 세 가지 값 중 하나로만 분류하면 됩니다.)
+- "다음주", "다음달"처럼 today/this_week 범위를 벗어나는 표현은
+  현재 지원하지 않으므로 null로 처리합니다.
 
 --------------------------------------------------
 
@@ -155,7 +181,8 @@ information
     "keywords": [],
     "reservation": null,
     "operation": null,
-    "information": null
+    "information": null,
+    "date_filter": null
 }
 """
 
@@ -195,6 +222,10 @@ MongoDB에서 조회된 팝업 정보만 이용하여 사용자에게 답변합�
 10. 검색 결과가 없으면
 "죄송합니다. 조건에 맞는 팝업스토어를 찾지 못했습니다."
 라고만 답변합니다.
+
+11. 사용자가 "오늘", "이번주"처럼 날짜 조건을 언급했다면,
+    검색 결과는 이미 해당 기간에 맞게 필터링되어 전달된 것이므로
+    별도로 날짜를 재검증하지 말고, 결과에 있는 팝업을 그대로 안내합니다.
 
 ---
 
@@ -301,19 +332,32 @@ MongoDB에서 조회된 팝업 정보만 이용하여 사용자에게 답변합�
 # User Prompt Builder
 # ==========================================================
 
-def build_search_condition_user_prompt(user_question: str) -> str:
+def build_search_condition_user_prompt(
+    user_question: str,
+    today_str: str | None = None,
+) -> str:
     """
     [1단계] 검색 조건 생성용 User Prompt
 
     SEARCH_CONDITION_PROMPT(system)가
     출력 형식과 규칙을 모두 정의하므로
 
-    User Prompt에는
-    사용자 질문만 전달한다.
+    User Prompt에는 사용자 질문과(선택적으로) 오늘 날짜만 전달한다.
+
+    Gemini는 학습 시점 이후의 "현재 날짜"를 알 수 없기 때문에,
+    "오늘"/"이번주" 같은 표현을 판단할 때 참고할 수 있도록
+    서버에서 계산한 오늘 날짜(today_str)를 함께 전달한다.
+
+    다만 실제 날짜 범위(예: 이번주 월~일)의 계산과
+    MongoDB 쿼리 변환은 어디까지나 서버(mongo_service.py)에서 수행하며,
+    Gemini는 date_filter를 "today" / "this_week" / null 중 하나로
+    분류하는 역할만 담당한다.
     """
 
+    today_line = f"오늘 날짜: {today_str}\n\n" if today_str else ""
+
     return f"""
-사용자 질문:
+{today_line}사용자 질문:
 
 {user_question}
 
