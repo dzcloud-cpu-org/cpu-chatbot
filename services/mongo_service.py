@@ -283,6 +283,20 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
     elif intent == "reservation":
         # 예약 관련 문구가 additional_information에 있는 팝업만 조회
         # (위 주의사항 참고: 텍스트 매칭 수준일 뿐 실시간 예약 가능 여부는 아님)
+        #
+        # 버그 수정: 기존에는 popup_name/keywords 조건만 적용되고
+        # location/category 조건이 누락되어 있었다.
+        # 예) "서울 예약 팝업 알려줘" → location="서울"이 무시되어
+        #     서울이 아닌 다른 지역 팝업까지 검색되는 문제가 있었다.
+        # → location(region/address)과 category 조건을 명시적으로 추가한다.
+        location = search_condition.get("location")
+        if location:
+            conditions.append(_keyword_or_condition(location, ["region", "address"]))
+
+        category = search_condition.get("category")
+        if category:
+            conditions.append({"category": {"$regex": category, "$options": "i"}})
+
         conditions += _popup_name_or_keyword_conditions(search_condition)
         conditions.append({
             "additional_information": {"$regex": "예약|사전예약|네이버", "$options": "i"}
