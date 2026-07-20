@@ -1,7 +1,8 @@
 # chatbot_service.py
 from utils.keyword_utils import extract_keywords
 from services.mongo_service import search_popup
-from services.gemini_service import generate_chat_response
+#from services.ai.gemini_service import generate_chat_response
+from services.ai.ai_factory import generate_chat_response
 import time
 from utils.guardrail import is_popup_question
 

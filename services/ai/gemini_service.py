@@ -59,7 +59,7 @@ def _get_client() -> genai.Client:
 
     if not api_key:
         raise GeminiAPIError(
-            "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요."
+            "GEMINI_API_KEY 환경변수가 설정되지 않았습니다. .env 파일/ 확인하세요."
         )
 
 

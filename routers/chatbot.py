@@ -1,7 +1,7 @@
 # chatbot.py
 # # 서비스 호출 (URL만 받는다.)
 from fastapi import APIRouter
-from services.ai_chatbot_service import generate_ai_search_response
+from services.ai.ai_chatbot_service import generate_ai_search_response
 
 router = APIRouter(
     prefix="/chatbot",

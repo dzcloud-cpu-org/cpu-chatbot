@@ -8,7 +8,7 @@ AI 검색형 챗봇 서비스 (2단계 Gemini 파이프라인)
 구조였다.
 
 이 서비스는 규칙 기반 키워드 추출 대신
-Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
+AI 모델에게 "질문 분석"까지 맡기는 방식으로 확장한다.
 
 처리 흐름
 ==========================================================
@@ -18,7 +18,7 @@ Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
 0) Guardrail          - 팝업과 무관한 질문 즉시 차단 (Gemini/Mongo 호출 절약)
     │
     ▼
-1) Gemini 1단계 호출   - SEARCH_CONDITION_PROMPT
+1) AI 1단계 호출   - SEARCH_CONDITION_PROMPT
                          자연어 질문 → 검색 조건(JSON) 생성
                          (date_filter 판단을 돕기 위해 오늘 날짜를 함께 전달)
     │
@@ -31,7 +31,7 @@ Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
 3) 결과 정제            - 중복 제거 + 상위 N개 제한
     │
     ▼
-4) Gemini 2단계 호출   - CHATBOT_RESPONSE_PROMPT
+4) AI 2단계 호출   - CHATBOT_RESPONSE_PROMPT
                          검색 결과만 근거로 자연어 답변 생성
     │
     ▼
@@ -44,6 +44,7 @@ Gemini에게 "질문 분석"까지 맡기는 방식으로 확장한다.
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import date
 from typing import Any, Dict, List
@@ -54,17 +55,26 @@ from prompts.chatbot_prompts import (
     build_chatbot_answer_user_prompt,
     build_search_condition_user_prompt,
 )
-from services.gemini_service import (
-    GeminiAPIError,
+# Gemini
+#from services.gemini_service import (
+#    GeminiAPIError,
+#    generate_chat_response,
+#    generate_structured_response,
+#)
+
+# Openai
+from services.ai.ai_factory import (
     generate_chat_response,
     generate_structured_response,
+    AI_PROVIDER
 )
+
 from services.mongo_service import search_popup_by_condition
 from utils.guardrail import is_popup_question
 
-# 검색 결과 중 Gemini(2단계)에게 실제로 전달할 최대 개수.
+# 검색 결과 중 AI(2단계)에게 실제로 전달할 최대 개수.
 # 너무 많이 전달하면 입력 토큰이 늘고 답변 품질이 떨어지므로 상위 N개만 사용한다.
-MAX_RESULTS_FOR_GEMINI = 3
+MAX_RESULTS_FOR_AI = 3
 
 NO_RESULT_MESSAGE = "죄송합니다.\n\n조건에 맞는 팝업스토어를 찾지 못했습니다."
 NOT_POPUP_QUESTION_MESSAGE = "죄송합니다.\n\n저는 팝업스토어 관련 질문만 답변할 수 있습니다."
@@ -76,14 +86,14 @@ NOT_POPUP_QUESTION_MESSAGE = "죄송합니다.\n\n저는 팝업스토어 관련 
 
 async def _build_search_condition(user_question: str) -> Dict[str, Any]:
     """
-    Gemini에게 SEARCH_CONDITION_PROMPT(system) + 사용자 질문(user)을 전달하여
+    AI 모델에게 SEARCH_CONDITION_PROMPT(system) + 사용자 질문(user)을 전달하여
     MongoDB 검색 조건(JSON)을 생성한다.
 
-    Gemini는 학습 시점 이후의 "현재 날짜"를 알 수 없으므로,
+    AI는 학습 시점 이후의 "현재 날짜"를 알 수 없으므로,
     "오늘"/"이번주" 같은 표현을 정확히 분류할 수 있도록
     서버에서 계산한 오늘 날짜(date.today())를 User Prompt에 함께 넣어준다.
 
-    다만 Gemini가 직접 날짜 산술(예: 이번주 월~일 계산)을 하지는 않으며,
+    다만 AI가 직접 날짜 산술(예: 이번주 월~일 계산)을 하지는 않으며,
     date_filter를 "today" / "this_week" / null 중 하나로 분류하는 역할만 한다.
     실제 날짜 범위 계산 및 쿼리 변환은 mongo_service.py에서 서버가 처리한다.
 
@@ -110,7 +120,7 @@ async def _build_search_condition(user_question: str) -> Dict[str, Any]:
 
 
 # =============================================================================
-# 2단계: MongoDB 검색 결과 → Gemini 프롬프트용 텍스트 변환
+# 2단계: MongoDB 검색 결과 → AI 프롬프트용 텍스트 변환
 # =============================================================================
 
 def _deduplicate(results: List[dict]) -> List[dict]:
@@ -133,7 +143,7 @@ def _deduplicate(results: List[dict]) -> List[dict]:
 
 def _build_popup_info_text(results: List[dict]) -> str:
     """
-    MongoDB 검색 결과를 Gemini(2단계)에게 전달할 텍스트로 변환한다.
+    MongoDB 검색 결과를 AI(2단계)에게 전달할 텍스트로 변환한다.
 
     개선사항
     --------------------------------------------------------------------
@@ -186,7 +196,7 @@ def _build_popup_info_text(results: List[dict]) -> str:
         )
 
         # --------------------------------------------------
-        # Gemini 전달용 텍스트 생성
+        # AI 전달용 텍스트 생성
         # --------------------------------------------------
         popup_info += f"""
         [{idx}]
@@ -239,7 +249,7 @@ async def _build_final_answer(
     results: List[dict],
 ) -> str:
     """
-    Gemini에게 CHATBOT_RESPONSE_PROMPT(system) + 사용자 질문/의도/검색결과(user)를
+    AI 모델에게 CHATBOT_RESPONSE_PROMPT(system) + 사용자 질문/의도/검색결과(user)를
     전달하여 최종 자연어 답변을 생성한다.
     """
 
@@ -280,7 +290,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
     # -------------------------------------------------------
     # 0) Guardrail
     #
-    # 팝업스토어와 무관한 질문은 Gemini(1단계/2단계)와 MongoDB를
+    # 팝업스토어와 무관한 질문은 AI(1단계/2단계)와 MongoDB를
     # 아예 호출하지 않고 즉시 차단한다. (응답 속도 + 비용 절감)
     # -------------------------------------------------------
     if not is_popup_question(user_question):
@@ -294,7 +304,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------
-    # 1) 검색 조건 생성 (Gemini 1단계)
+    # 1) 검색 조건 생성 (AI 1단계)
     #
     # date_filter("today" / "this_week" / null)를 정확히 판단할 수 있도록
     # _build_search_condition() 내부에서 오늘 날짜를 함께 전달한다.
@@ -303,8 +313,8 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
 
     try:
         search_condition = await _build_search_condition(user_question)
-    except GeminiAPIError as e:
-        # 1단계 Gemini 호출 자체가 실패하면 검색을 진행할 수 없으므로
+    except Exception as e:
+        # 1단계 AI 호출 자체가 실패하면 검색을 진행할 수 없으므로
         # 사용자에게는 안내 메시지만 반환하고, 원인은 로그로 남긴다.
         print(f"[1단계 실패] 검색 조건 생성 오류: {e}")
         return {
@@ -315,7 +325,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
             "answer": "죄송합니다.\n\n질문을 분석하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
         }
 
-    print(f"[TIME] 검색 조건 생성(1단계 Gemini) : {time.perf_counter() - condition_start:.4f}초")
+    print(f"[TIME] 검색 조건 생성(1단계 AI) : {time.perf_counter() - condition_start:.4f}초")
     print("생성된 검색 조건 :", search_condition)
 
     # -------------------------------------------------------
@@ -323,7 +333,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
     #
     # search_condition의 date_filter 값("today"/"this_week"/null)을
     # 실제 날짜 범위로 변환하는 작업은 mongo_service.py에서 수행한다.
-    # (Gemini는 분류만 하고, 날짜 산술은 서버가 담당)
+    # (AI는 분류만 하고, 날짜 산술은 서버가 담당)
     # -------------------------------------------------------
     mongo_start = time.perf_counter()
 
@@ -333,12 +343,13 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
 
     # 중복 제거 + 상위 N개만 사용
     search_results = _deduplicate(search_results)
-    search_results = search_results[:MAX_RESULTS_FOR_GEMINI]
+    search_results = search_results[:MAX_RESULTS_FOR_AI]
 
     popup_info = _build_popup_info_text(search_results)
 
     print("=" * 80)
-    print("Gemini Search condition")
+    print("AI Search condition")
+    print(f"f{AI_PROVIDER.upper()} Search condition")  # AI 호출할 때마다 자동으로 해당 AI로 바뀐다.
     print(search_condition)
     print("popup_info")
     print(popup_info)
@@ -350,9 +361,9 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
     print("=" * 80)
 
     # -------------------------------------------------------
-    # 검색 결과가 없으면 2단계 Gemini 호출 없이 즉시 응답한다.
+    # 검색 결과가 없으면 2단계 AI 호출 없이 즉시 응답한다.
     # (CHATBOT_RESPONSE_PROMPT 규칙 10번과 동일한 문구를
-    #  코드 레벨에서 먼저 처리해 불필요한 Gemini 호출을 줄인다.)
+    #  코드 레벨에서 먼저 처리해 불필요한 AI 호출을 줄인다.)
     # -------------------------------------------------------
     if not search_results:
         return {
@@ -364,13 +375,13 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------
-    # 3) 최종 답변 생성 (Gemini 2단계)
+    # 3) 최종 답변 생성 (AI 2단계)
     # -------------------------------------------------------
     answer_start = time.perf_counter()
 
     try:
         answer = await _build_final_answer(user_question, search_condition, search_results)
-    except GeminiAPIError as e:
+    except Exception as e:
         print(f"[2단계 실패] 답변 생성 오류: {e}")
         return {
             "question": user_question,
@@ -380,7 +391,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
             "answer": "죄송합니다.\n\n답변을 생성하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
         }
 
-    print(f"[TIME] 답변 생성(2단계 Gemini) : {time.perf_counter() - answer_start:.4f}초")
+    print(f"[TIME] 답변 생성(2단계 AI) : {time.perf_counter() - answer_start:.4f}초")
     print(f"[TIME] 전체 처리 : {time.perf_counter() - total_start:.4f}초")
 
     return {
