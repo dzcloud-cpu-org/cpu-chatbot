@@ -163,6 +163,9 @@ async def generate_structured_response(
 
     try:
 
+        # 주의: 이전에는 같은 config/user_prompt로 generate_content를 두 번 호출하고 있었다.
+        # (실수로 복사되어 남아있던 코드 — Gemini를 쓸 때마다 매번 API 호출 비용이 2배로 나가는 원인이었다.)
+        # 호출은 반드시 한 번만 한다.
         response = await client.aio.models.generate_content(
             model=GEMINI_MODEL,
             contents=user_prompt,
@@ -172,20 +175,6 @@ async def generate_structured_response(
         print("=" * 80)
         print("현재 사용하는 모델 :", GEMINI_MODEL)
         print("=" * 80)
-
-        response = await client.aio.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=user_prompt,
-            config=config,
-        )
-
-        ##print("=" * 80)
-        ##print(repr(response.text))
-        # repr(response.text)는 \n \r \t 까지 다 보여준다.
-        # 어디서 JSON이 깨졌는지 파악하기 위한 디버깅용
-        ##print("=" * 80)
-
-
 
     except errors.APIError as e:
 

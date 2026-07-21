@@ -181,31 +181,7 @@ def search_popup(keywords: list[str], limit: int = 5) -> list[dict]:
 
 # =============================================================================
 # [AI 검색형 챗봇] 검색 조건(JSON) 기반 팝업 검색 함수
-#
-# search_popup()이 "이미 추출된 키워드 리스트"를 입력받는 것과 달리,
-# 이 함수는 1단계 Gemini(SEARCH_CONDITION_PROMPT)가 생성한
-# 검색 조건 JSON 전체를 입력받아 MongoDB 쿼리로 변환한다.
-#
-# 예시 입력(search_condition):
-# {
-#     "intent": "location",
-#     "popup_name": null,
-#     "location": "성수",
-#     "category": "캐릭터",
-#     "purpose": null,
-#     "keywords": ["포토존", "감성"],
-#     "reservation": null,
-#     "operation": null,
-#     "information": null,
-#     "date_filter": "this_week"
-# }
-#
-# intent, purpose, reservation, operation, information 값 자체는
-# 현재 컬렉션(cpu_popga)에 별도 필드로 저장되어 있지 않으므로
-# 검색 키워드로는 사용하지 않는다.
-# (해당 값들은 2단계 Gemini가 최종 답변의 "질문 의도 판단"에만 사용한다.)
-#
-# date_filter는 예외적으로 실제 쿼리 조건(start_date/end_date)에 직접 반영한다.
+# (이하 검색 로직은 기존과 동일 — 변경 없음)
 # =============================================================================
 
 def _build_keywords_from_condition(search_condition: dict) -> list[str]:
@@ -253,13 +229,10 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
       실제 날짜로 변환하여 조건에 반영 (_base_conditions 참고)
     - intent별로 검색 필드를 분리해 불필요한 필드 검색을 최소화
 
-    주의(예약/reservation intent 관련):
-    현재 컬렉션에는 "실시간 예약 가능 여부"를 나타내는 필드가 없고,
-    additional_information에 예약 관련 문구가 "등록되어 있는지" 여부만
-    텍스트로 매칭할 수 있다. 즉 "지금 예약 가능한가요?" 같은 질문에는
-    근본적으로 정확히 답할 수 없으며, 실시간 예약 가능 여부를 확인하려면
-    크롤링/DB 설계 단계에서 별도 필드(예: reservation_available)를
-    추가하는 작업이 선행되어야 한다.
+    주의: DB 조회 시에는 (조건부 필드를 나중에 채울 수 있도록) 여전히
+    PROJECTION_EXTENDED로 필요한 필드를 모두 가져온다. 토큰 절감은
+    "DB에서 어떤 필드를 가져오느냐"가 아니라 "GPT에 무엇을 넘기느냐"에서
+    이루어지므로, GPT로 보내기 직전에 build_popup_info_list()를 거친다.
     """
     intent = search_condition.get("intent")
     date_filter = search_condition.get("date_filter")
@@ -281,14 +254,6 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
             conditions.append({"category": {"$regex": category, "$options": "i"}})
 
     elif intent == "reservation":
-        # 예약 관련 문구가 additional_information에 있는 팝업만 조회
-        # (위 주의사항 참고: 텍스트 매칭 수준일 뿐 실시간 예약 가능 여부는 아님)
-        #
-        # 버그 수정: 기존에는 popup_name/keywords 조건만 적용되고
-        # location/category 조건이 누락되어 있었다.
-        # 예) "서울 예약 팝업 알려줘" → location="서울"이 무시되어
-        #     서울이 아닌 다른 지역 팝업까지 검색되는 문제가 있었다.
-        # → location(region/address)과 category 조건을 명시적으로 추가한다.
         location = search_condition.get("location")
         if location:
             conditions.append(_keyword_or_condition(location, ["region", "address"]))
@@ -303,12 +268,10 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
         })
 
     elif intent == "operation":
-        # opening_hours 필드가 존재하는 팝업만 조회
         conditions += _popup_name_or_keyword_conditions(search_condition)
         conditions.append({"opening_hours": {"$exists": True}})
 
     elif intent == "information":
-        # 주소/추가 안내가 있는 팝업 조회
         conditions.append({
             "$or": [
                 {"address_detail": {"$exists": True}},
@@ -317,7 +280,6 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
         })
 
     else:
-        # recommend / review 등 그 외 intent → 지역/카테고리/키워드 종합 검색
         location = search_condition.get("location")
         if location:
             conditions.append(_keyword_or_condition(location, ["region", "address"]))
@@ -335,3 +297,79 @@ def search_popup_by_condition(search_condition: dict, limit: int = 5) -> list[di
     query = {"$and": conditions}
 
     return list(collection.find(query, PROJECTION_EXTENDED).limit(limit))
+
+
+# =============================================================================
+# [토큰 최적화] GPT 전달용 popup_info 최소화
+#
+# 기존에는 조회된 팝업 dict를 거의 그대로(주소/카테고리/content 전체/
+# waiting_info/additional_information 포함) GPT에 넘겨서 입력 토큰이 컸다.
+#
+# 아래 build_popup_info()는
+#   1) 항상 필요한 최소 필드(팝업명/위치/운영기간/운영시간/상세페이지 URL)만 담고,
+#   2) 사용자가 실제로 물어본 항목(intent 또는 keywords에 해당 단어가 있는 경우)에
+#      한해서만 주소/예약안내/웨이팅/카테고리/상세설명을 추가로 담으며,
+#   3) 상세 설명(content)은 포함하더라도 앞부분만 잘라 붙인다(_truncate).
+#
+# 반환값은 dict(직렬화하면 바로 JSON)이므로, 기존처럼 긴 한글 라벨이 붙은
+# 텍스트 블록을 만들 필요 없이 json.dumps(..., ensure_ascii=False)로
+# 바로 프롬프트에 넣으면 된다.
+# =============================================================================
+
+def _truncate(text: str | None, max_len: int = 100) -> str:
+    """긴 본문 텍스트를 max_len자로 잘라 "..."을 붙인다. GPT에 넘기는 토큰을 줄이기 위함."""
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip() + "..."
+
+
+def build_popup_info(popup: dict, search_condition: dict | None = None) -> dict:
+    """
+    MongoDB 조회 결과 1건을 GPT 전달용 최소 정보(dict)로 변환한다.
+
+    기본 포함 필드: title, location(region), period(운영기간), opening_hours, source_url
+    조건부 포함 필드: address / reservation_info / waiting_info / category / content
+      → search_condition의 intent 또는 keywords에 해당 질문이 있을 때만 추가.
+    """
+    search_condition = search_condition or {}
+    intent = search_condition.get("intent")
+    keywords_text = " ".join(search_condition.get("keywords") or [])
+    combined = f"{intent or ''} {keywords_text}"
+
+    info: dict = {
+        "title": popup.get("title"),
+        "location": popup.get("region"),
+        "period": f'{popup.get("start_date", "")} ~ {popup.get("end_date", "")}',
+        "opening_hours": popup.get("opening_hours"),
+        "source_url": popup.get("source_url"),
+    }
+
+    # 주소를 직접 물어본 경우에만 포함
+    if intent == "information" or "주소" in combined:
+        info["address"] = popup.get("address")
+
+    # 예약 관련 질문일 때만 포함 (실제 데이터는 additional_information 텍스트 매칭 수준)
+    if intent == "reservation" or any(w in combined for w in ("예약", "사전예약", "네이버예약")):
+        info["reservation_info"] = popup.get("additional_information")
+
+    # 웨이팅/대기 질문일 때만 포함
+    if any(w in combined for w in ("웨이팅", "대기")):
+        info["waiting_info"] = popup.get("waiting_info")
+
+    # 카테고리를 직접 물어본 경우에만 포함
+    if intent == "category" or "카테고리" in combined:
+        info["category"] = popup.get("category")
+
+    # 상세 설명(팝업 소개)을 물어본 경우에만, 그것도 앞부분만 잘라서 포함
+    if intent == "popup_info" or any(w in combined for w in ("설명", "소개", "어떤 곳", "어떤곳")):
+        info["content"] = _truncate(popup.get("content"))
+
+    return info
+
+
+def build_popup_info_list(popups: list[dict], search_condition: dict | None = None) -> list[dict]:
+    """search_popup_by_condition() 등으로 조회한 결과 리스트를 GPT 전달용으로 일괄 변환."""
+    return [build_popup_info(p, search_condition) for p in popups]

@@ -54,7 +54,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY"))}
+    return {"status": "ok", "gemini_key_set": bool(os.environ.get("OPENAI_API_KEY"))}
 
 
 app.include_router(chatbot_router)

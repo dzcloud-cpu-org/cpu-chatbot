@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import os
 import time
+from search_condition import build_search_condition
 from datetime import date
 from typing import Any, Dict, List
 
@@ -84,39 +85,39 @@ NOT_POPUP_QUESTION_MESSAGE = "죄송합니다.\n\n저는 팝업스토어 관련 
 # 1단계: 검색 조건 생성
 # =============================================================================
 
-async def _build_search_condition(user_question: str) -> Dict[str, Any]:
-    """
-    AI 모델에게 SEARCH_CONDITION_PROMPT(system) + 사용자 질문(user)을 전달하여
-    MongoDB 검색 조건(JSON)을 생성한다.
+#async def _build_search_condition(user_question: str) -> Dict[str, Any]:
+#    """
+ #   AI 모델에게 SEARCH_CONDITION_PROMPT(system) + 사용자 질문(user)을 전달하여
+#    MongoDB 검색 조건(JSON)을 생성한다.
 
-    AI는 학습 시점 이후의 "현재 날짜"를 알 수 없으므로,
-    "오늘"/"이번주" 같은 표현을 정확히 분류할 수 있도록
-    서버에서 계산한 오늘 날짜(date.today())를 User Prompt에 함께 넣어준다.
+#    AI는 학습 시점 이후의 "현재 날짜"를 알 수 없으므로,
+#    "오늘"/"이번주" 같은 표현을 정확히 분류할 수 있도록
+#    서버에서 계산한 오늘 날짜(date.today())를 User Prompt에 함께 넣어준다.
 
-    다만 AI가 직접 날짜 산술(예: 이번주 월~일 계산)을 하지는 않으며,
-    date_filter를 "today" / "this_week" / null 중 하나로 분류하는 역할만 한다.
-    실제 날짜 범위 계산 및 쿼리 변환은 mongo_service.py에서 서버가 처리한다.
+#    다만 AI가 직접 날짜 산술(예: 이번주 월~일 계산)을 하지는 않으며,
+#    date_filter를 "today" / "this_week" / null 중 하나로 분류하는 역할만 한다.
+#    실제 날짜 범위 계산 및 쿼리 변환은 mongo_service.py에서 서버가 처리한다.
 
-    generate_structured_response()는 response_mime_type="application/json"으로
-    호출되므로, 반환값은 이미 dict(JSON)로 파싱되어 있다.
-    """
+#    generate_structured_response()는 response_mime_type="application/json"으로
+#    호출되므로, 반환값은 이미 dict(JSON)로 파싱되어 있다.
+#    """
 
-    today_str = date.today().strftime("%Y-%m-%d")
+#    today_str = date.today().strftime("%Y-%m-%d")
 
-    user_prompt = build_search_condition_user_prompt(
-        user_question=user_question,
-        today_str=today_str,
-    )
+#    user_prompt = build_search_condition_user_prompt(
+#        user_question=user_question,
+#        today_str=today_str,
+#    )
 
-    search_condition = await generate_structured_response(
-        system_prompt=SEARCH_CONDITION_PROMPT,
-        user_prompt=user_prompt,
+#    search_condition = await generate_structured_response(
+#        system_prompt=SEARCH_CONDITION_PROMPT,
+#        user_prompt=user_prompt,
         # 검색 조건 생성은 "정답이 정해진" 작업에 가까우므로
         # 창의성보다 일관성이 중요하다 → temperature를 낮게 설정
-        temperature=0.1,
-    )
+#        temperature=0.1,
+#    )
 
-    return search_condition
+#    return search_condition
 
 
 # =============================================================================
@@ -312,7 +313,7 @@ async def generate_ai_search_response(user_question: str) -> Dict[str, Any]:
     condition_start = time.perf_counter()
 
     try:
-        search_condition = await _build_search_condition(user_question)
+        search_condition = build_search_condition(user_question)
     except Exception as e:
         # 1단계 AI 호출 자체가 실패하면 검색을 진행할 수 없으므로
         # 사용자에게는 안내 메시지만 반환하고, 원인은 로그로 남긴다.

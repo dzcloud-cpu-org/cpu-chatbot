@@ -1,7 +1,11 @@
 # ai_factory.py
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").lower()
+print("AI_PROVIDER =", AI_PROVIDER)
 
 if AI_PROVIDER == "gemini":
 
