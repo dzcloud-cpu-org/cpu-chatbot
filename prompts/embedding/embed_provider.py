@@ -12,9 +12,6 @@ search_condition.py(사용자 질문 임베딩, 매 요청마다 1개)에서 공
 - "gemini" / "openai": API 임베딩. 로컬 모델을 못 쓰는 환경(리소스 제한 등)일 때 대체용.
 """
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
 LOCAL_EMBEDDING_MODEL = os.environ.get(
@@ -63,11 +60,20 @@ def _embed_gemini(texts: list[str]) -> list[list[float]]:
 def _embed_openai(texts: list[str]) -> list[list[float]]:
     from openai import OpenAI
 
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY 환경변수가 없습니다."
+        )
+
+    client = OpenAI(api_key=api_key)
+
     response = client.embeddings.create(
         model="text-embedding-3-small",
         input=texts,
     )
+
     return [item.embedding for item in response.data]
 
 

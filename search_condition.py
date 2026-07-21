@@ -79,6 +79,60 @@ def _extract_location(question: str) -> str | None:
     return None
 
 
+def _extract_keywords(question: str) -> list[str]:
+    remove_words = {
+        "팝업",
+        "팝업스토어",
+        "스토어",
+        "알려줘",
+        "알려",
+        "찾아줘",
+        "찾아",
+        "추천",
+        "해주세요",
+        "해줘",
+        "가능",
+        "가능한",
+        "열리는",
+        "진행하는",
+        "하는",
+        "있는",
+    }
+
+    keywords = []
+
+    for word in question.split():
+        word = word.strip(".,!?")
+
+        # 긴 조사부터 제거
+        for suffix in [
+            "에서",
+            "으로",
+            "에게",
+            "부터",
+            "까지",
+            "은",
+            "는",
+            "이",
+            "가",
+            "을",
+            "를",
+        ]:
+            if word.endswith(suffix):
+                word = word[:-len(suffix)]
+                break
+
+        if not word:
+            continue
+
+        if word in remove_words:
+            continue
+
+        keywords.append(word)
+
+    return keywords
+
+
 # --- intent 규칙 (LLM 없이 키워드 매칭) ---
 # 순서가 중요: 위에서부터 먼저 매칭되는 것을 채택한다.
 _INTENT_RULES: list[tuple[str, list[str]]] = [
@@ -115,7 +169,17 @@ def build_search_condition(question: str) -> dict:
       데이터가 늘어나면 _LOCATIONS와 같은 방식으로 사전을 추가하면 된다.
     """
     question_vector = embed_texts([question])[0]
-    keywords = _top_similar_tags(question_vector)
+
+    # 임베딩 기반 의미 키워드 추출
+    semantic_keywords = _top_similar_tags(question_vector)
+
+    # 사용자가 직접 입력한 명시적 키워드 추출
+    explicit_keywords = _extract_keywords(question)
+
+    # 두 결과 병합 + 중복 제거
+    keywords = list(set(
+        semantic_keywords + explicit_keywords
+    ))
 
     return {
         "intent": _classify_intent(question),
