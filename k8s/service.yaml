@@ -1,0 +1,23 @@
+# k8s/service.yaml
+#
+# 클러스터 내부에서만 필요한 ClusterIP 서비스. 외부 노출은 Istio
+# Gateway+VirtualService(virtualservice.yaml)가 담당하므로 여기서는
+# LoadBalancer/NodePort를 쓰지 않는다.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: popup-chatbot-backend
+  namespace: default
+  labels:
+    app: popup-chatbot-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: popup-chatbot-backend
+  ports:
+    # 포트 이름을 "http"로 지정해야 Istio가 L7(HTTP) 프로토콜로 인식해
+    # 재시도/타임아웃/라우팅 규칙 등을 적용할 수 있다.
+    - name: http
+      port: 80
+      targetPort: http   # deployment.yaml의 containerPort 이름(http)과 매칭

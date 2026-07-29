@@ -1,0 +1,48 @@
+# k8s/virtualservice.yaml
+#
+# 아키텍처 다이어그램의 "Client → Istio Ingress Gateway → FastAPI Backend"
+# 구간. 회사 클러스터에 이미 공용 Istio Gateway(ingressgateway)가 떠 있는
+# 경우가 많으므로, Gateway는 새로 만들지 않고 기존 것을 참조하는 형태로
+# 작성했다. 만약 이 서비스 전용 Gateway가 필요하면 아래 주석 처리된
+# Gateway 리소스를 활성화한다.
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: popup-chatbot-backend
+  namespace: default
+spec:
+  hosts:
+    - "popup-chatbot.example.com"   # 실제 서비스 도메인으로 교체
+  gateways:
+    - istio-system/ingressgateway    # 클러스터에 이미 있는 공용 Gateway 이름으로 교체
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: popup-chatbot-backend.default.svc.cluster.local
+            port:
+              number: 80
+      timeout: 35s   # LAMBDA_TIMEOUT_SECONDS(30초)보다 여유 있게
+
+---
+# 이 서비스 전용 Gateway가 필요할 때만 아래 주석을 해제한다
+# (이미 공용 Gateway를 쓰고 있다면 아래는 적용하지 않는다).
+#
+# apiVersion: networking.istio.io/v1
+# kind: Gateway
+# metadata:
+#   name: popup-chatbot-gateway
+#   namespace: default
+# spec:
+#   selector:
+#     istio: ingressgateway
+#   servers:
+#     - port:
+#         number: 80
+#         name: http
+#         protocol: HTTP
+#       hosts:
+#         - "popup-chatbot.example.com"

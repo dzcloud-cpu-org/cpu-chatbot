@@ -18,3 +18,13 @@ __pycache__/
 # 문서 / 개발용 스크립트 (런타임에 불필요)
 README.md
 .env.example
+
+# lambda/는 별도 zip으로 독립 배포되는 코드라 backend 이미지에 필요 없다
+lambda/
+
+# 테스트 / 문서 / IaC (런타임에 불필요, 이미지 크기만 늘림)
+tests/
+docs/
+requirements-dev.txt
+template.yaml
+k8s/

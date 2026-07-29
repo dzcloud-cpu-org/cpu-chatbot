@@ -1,0 +1,98 @@
+# k8s/deployment.yaml
+#
+# backend/ 는 이미 저장소 전체를 COPY하는 기존 Dockerfile로 빌드되는 FastAPI
+# 앱이다(별도 Dockerfile 불필요). 이 Deployment는 그 이미지를 그대로 띄운다.
+#
+# 이미지는 Harbor 레지스트리에 올린다(별도 CI/CD 파이프라인이 빌드/푸시를
+# 담당 — 이 저장소에서 docker build/push를 직접 할 필요 없음). 아래 image
+# 필드의 <harbor-host>/<project>/popup-chatbot-backend:<tag>를 실제 값으로
+# 바꾼다. ("latest" 태그는 롤백/추적이 어려워 피하고, git commit SHA나
+# semver를 권장한다.)
+#
+# imagePullSecrets(Harbor가 private 레지스트리인 경우 필요)는 현재 보류 —
+# 필요해지면 spec.template.spec에 아래를 추가한다.
+#   imagePullSecrets:
+#     - name: harbor-registry-credentials
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: popup-chatbot-backend
+  namespace: default
+  labels:
+    app: popup-chatbot-backend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: popup-chatbot-backend
+  template:
+    metadata:
+      labels:
+        app: popup-chatbot-backend
+      annotations:
+        # Istio sidecar 자동 주입 (namespace에 istio-injection=enabled 라벨이 있으면
+        # 사실 없어도 되지만, 명시해두면 의도가 분명해진다).
+        sidecar.istio.io/inject: "true"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001      # Dockerfile에서 만든 non-root 사용자 UID와 일치
+        fsGroup: 10001
+      containers:
+        - name: backend
+          image: "<registry>/popup-chatbot-backend:<tag>"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 7000
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"   # readOnlyRootFilesystem이라 .pyc 캐시를 쓸 수 없어 아예 생성하지 않게 함
+          envFrom:
+            - configMapRef:
+                name: popup-chatbot-backend-config
+            - secretRef:
+                name: popup-chatbot-backend-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # main.py의 GET /health를 그대로 사용 — 코드 추가 불필요.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp   # readOnlyRootFilesystem 환경에서 임시 파일이 필요할 경우를 대비
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30

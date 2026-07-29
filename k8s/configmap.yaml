@@ -1,0 +1,34 @@
+# k8s/configmap.yaml
+#
+# 민감하지 않은 설정값만 담는다. 비밀값(API Key, 비밀번호, 접속 문자열)은
+# secret.yaml 쪽으로 분리했다 — ConfigMap은 평문으로 저장되고 `kubectl get
+# configmap -o yaml`로 누구나 볼 수 있기 때문이다.
+#
+# 여기 적힌 키 이름은 backend/config/settings.py, services/mongo_service.py,
+# services/ai/ai_factory.py, prompts/embedding/embed_provider.py가 os.environ으로
+# 그대로 읽는 이름과 정확히 같아야 한다(코드 수정 없이 값만 주입되는 구조).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: popup-chatbot-backend-config
+  namespace: default
+data:
+  # --- Redis (Kubernetes 내부 Service) ---
+  REDIS_HOST: "redis.default.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_TTL_SECONDS: "3600"
+  REDIS_TIMEOUT_SECONDS: "1.5"
+  CACHE_ENABLED: "true"
+
+  # --- Lambda (API Gateway 경유) ---
+  # sam deploy 결과로 나온 실제 API Gateway invoke URL로 교체한다.
+  LAMBDA_API_URL: "https://xxxxx.execute-api.ap-northeast-2.amazonaws.com/Prod/chat"
+  LAMBDA_TIMEOUT_SECONDS: "30"
+
+  # --- AI Provider (레거시 /chatbot/search, /chatbot/ai-search 엔드포인트가 사용) ---
+  AI_PROVIDER: "openai"
+  EMBEDDING_PROVIDER: "openai"
+
+  # --- Logging ---
+  LOG_LEVEL: "INFO"
