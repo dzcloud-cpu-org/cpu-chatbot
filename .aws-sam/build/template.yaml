@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "\uD31D\uC5C5\uC2A4\uD1A0\uC5B4 AI \uCC57\uBD07 - Lambda(AI \uACC4\uCE35\
+  ) + API Gateway"
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 512
+Parameters:
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+  LambdaApiKeyValue:
+    Type: String
+    NoEcho: true
+    Description: "backend\uAC00 x-api-key \uD5E4\uB354\uB85C \uBCF4\uB0BC \uAC12\uACFC\
+      \ \uB3D9\uC77C\uD574\uC57C \uD568 (backend/config/settings.py\uC758 LAMBDA_API_KEY)"
+Resources:
+  ChatbotFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_handler.handler
+      CodeUri: ChatbotFunction
+      Environment:
+        Variables:
+          OPENAI_API_KEY:
+            Ref: OpenAiApiKey
+          OPENAI_MODEL: gpt-4.1-mini
+          OPENAI_TIMEOUT_SECONDS: '8'
+          LOG_LEVEL: INFO
+      Events:
+        ChatApi:
+          Type: Api
+          Properties:
+            Path: /chat
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+    Metadata:
+      SamResourceId: ChatbotFunction
+  ChatbotApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Enabled: true
+      Value:
+        Ref: LambdaApiKeyValue
+  ChatbotUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+      - ApiId:
+          Ref: ServerlessRestApi
+        Stage:
+          Ref: ServerlessRestApi.Stage
+      Throttle:
+        RateLimit: 20
+        BurstLimit: 10
+  ChatbotUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId:
+        Ref: ChatbotApiKey
+      KeyType: API_KEY
+      UsagePlanId:
+        Ref: ChatbotUsagePlan
+Outputs:
+  ApiUrl:
+    Description: "FastAPI(backend/config/settings.py\uC758 LAMBDA_API_URL)\uC5D0 \uC124\
+      \uC815\uD560 API Gateway invoke URL"
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/chat
