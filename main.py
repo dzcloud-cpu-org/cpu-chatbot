@@ -5,9 +5,13 @@ AI 팝업 챗봇 - FastAPI PoC
     uvicorn main:app --reload --port 8000
 
 엔드포인트:
-    GET /health                     - 헬스체크
-    GET /chatbot/search             - 챗봇 (레거시, 규칙 기반 키워드 추출)
-    GET /chatbot/ai-search          - 챗봇 (AI 검색형, 2단계 Gemini 파이프라인)
+    GET  /health                     - 헬스체크
+    GET  /chatbot/search             - 챗봇 (레거시, 규칙 기반 키워드 추출)
+    GET  /chatbot/ai-search          - 챗봇 (AI 검색형, 2단계 Gemini 파이프라인)
+    POST /chat                       - 챗봇 (FastAPI가 Redis 캐시/MongoDB RAG를
+                                        담당하고, API Gateway 뒤의 Lambda(lambda/)에
+                                        AI 처리(Guardrail+OpenAI)만 위임하는 구조.
+                                        자세한 아키텍처는 docs/serverless_architecture.md 참고)
 
 ※ 기존에 있던 팝업 추천/일정 생성 기능(/api/v1/planner/recommend, /api/v1/planner/replan)은
    챗봇 기능만 남기기로 하면서 제거했습니다.
@@ -31,6 +35,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers.chatbot import router as chatbot_router
+from backend.api.chat_router import router as chat_router
+from backend.api.error_handlers import register_exception_handlers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,3 +64,6 @@ async def health():
 
 
 app.include_router(chatbot_router)
+app.include_router(chat_router)
+
+register_exception_handlers(app)

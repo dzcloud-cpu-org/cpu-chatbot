@@ -1,0 +1,78 @@
+# template.yaml — AWS SAM 참고용 최소 예시
+#
+# 이 Lambda는 이제 순수 AI 계층이라(MongoDB/Redis에 전혀 연결하지 않음) VPC/보안그룹
+# 설정이 필요 없다 — OpenAI(공인 인터넷)만 호출하면 되고, API Gateway가 트리거다.
+# (예전 버전에서는 Lambda가 사설망 MongoDB/Redis에 직접 붙는 구조라 VPC 연결이
+#  필요했지만, FastAPI가 그 역할을 대신 맡게 되면서 이 제약이 사라졌다.)
+#
+# CodeUri를 lambda/ 로 지정했으므로, sam build/deploy는 lambda/ 디렉터리 내용만
+# (lambda_handler.py, guardrail/, llm/, prompts/, requirements.txt) 패키징한다 —
+# backend/, services/, pymongo 등은 이 배포 패키지에 전혀 포함되지 않는다.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: 팝업스토어 AI 챗봇 - Lambda(AI 계층) + API Gateway
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15 # OPENAI_TIMEOUT_SECONDS(기본 8초)보다 여유 있게. API Gateway REST API 하드 리밋은 29초.
+    MemorySize: 512
+
+Parameters:
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+  LambdaApiKeyValue:
+    Type: String
+    NoEcho: true
+    Description: backend가 x-api-key 헤더로 보낼 값과 동일해야 함 (backend/config/settings.py의 LAMBDA_API_KEY)
+
+Resources:
+  ChatbotFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_handler.handler
+      CodeUri: lambda/
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref OpenAiApiKey
+          OPENAI_MODEL: gpt-4.1-mini
+          OPENAI_TIMEOUT_SECONDS: "8"
+          LOG_LEVEL: INFO
+      Events:
+        ChatApi:
+          Type: Api
+          Properties:
+            Path: /chat
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+
+  ChatbotApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Enabled: true
+      Value: !Ref LambdaApiKeyValue
+
+  ChatbotUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ServerlessRestApi
+          Stage: !Ref ServerlessRestApi.Stage
+      Throttle:
+        RateLimit: 20
+        BurstLimit: 10
+
+  ChatbotUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ChatbotApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ChatbotUsagePlan
+
+Outputs:
+  ApiUrl:
+    Description: FastAPI(backend/config/settings.py의 LAMBDA_API_URL)에 설정할 API Gateway invoke URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/chat"

@@ -1,0 +1,7 @@
+# 테스트 전용 의존성 (Lambda 배포 패키지에는 포함하지 않는다)
+-r requirements.txt
+
+pytest
+pytest-asyncio
+fakeredis
+mongomock

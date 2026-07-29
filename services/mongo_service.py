@@ -346,7 +346,7 @@ def build_popup_info(popup: dict, search_condition: dict | None = None) -> dict:
         "opening_hours": popup.get("opening_hours"),
         "source_url": popup.get("source_url"),
     }
-
+ 
     # 주소를 직접 물어본 경우에만 포함
     if intent == "information" or "주소" in combined:
         info["address"] = popup.get("address")

@@ -38,3 +38,6 @@ websockets==16.1
 # GPT
 openai
 anthropic
+
+# Cache (backend/services/redis_service.py)
+redis
