@@ -47,7 +47,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: backend
-          image: "<registry>/popup-chatbot-backend:<tag>"
+          image: "<harbor-host>/<project>/popup-chatbot-backend:<tag>"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
