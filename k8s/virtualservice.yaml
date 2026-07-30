@@ -10,7 +10,7 @@ apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: popup-chatbot-backend
-  namespace: default
+  namespace: back-ns
 spec:
   hosts:
     - "popup-chatbot.example.com"   # 실제 서비스 도메인으로 교체
@@ -22,7 +22,7 @@ spec:
             prefix: /
       route:
         - destination:
-            host: popup-chatbot-backend.default.svc.cluster.local
+            host: popup-chatbot-backend.back-ns.svc.cluster.local
             port:
               number: 80
       timeout: 35s   # LAMBDA_TIMEOUT_SECONDS(30초)보다 여유 있게
@@ -35,7 +35,7 @@ spec:
 # kind: Gateway
 # metadata:
 #   name: popup-chatbot-gateway
-#   namespace: default
+#   namespace: back-ns
 # spec:
 #   selector:
 #     istio: ingressgateway

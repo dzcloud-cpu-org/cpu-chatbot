@@ -8,7 +8,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: popup-chatbot-backend
-  namespace: default
+  namespace: back-ns
   labels:
     app: popup-chatbot-backend
 spec:

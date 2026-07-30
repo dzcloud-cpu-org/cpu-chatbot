@@ -12,7 +12,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: popup-chatbot-backend-config
-  namespace: default
+  namespace: back-ns
 data:
   # --- Redis (같은 클러스터의 cpu-cache-ns 네임스페이스에 이미 배포되어 있음, 인증 없음) ---
   REDIS_HOST: "redis-svc.cpu-cache-ns.svc.cluster.local"

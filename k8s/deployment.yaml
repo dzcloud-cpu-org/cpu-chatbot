@@ -3,11 +3,13 @@
 # backend/ 는 이미 저장소 전체를 COPY하는 기존 Dockerfile로 빌드되는 FastAPI
 # 앱이다(별도 Dockerfile 불필요). 이 Deployment는 그 이미지를 그대로 띄운다.
 #
-# 이미지는 Harbor 레지스트리에 올린다(별도 CI/CD 파이프라인이 빌드/푸시를
-# 담당 — 이 저장소에서 docker build/push를 직접 할 필요 없음). 아래 image
-# 필드의 <harbor-host>/<project>/popup-chatbot-backend:<tag>를 실제 값으로
-# 바꾼다. ("latest" 태그는 롤백/추적이 어려워 피하고, git commit SHA나
-# semver를 권장한다.)
+# 이미지는 Harbor 레지스트리(https://192.168.0.236:8443/)에 올린다(별도 CI/CD
+# 파이프라인이 빌드/푸시를 담당 — 이 저장소에서 docker build/push를 직접 할
+# 필요 없음). 프로젝트명은 back-ns로 가정해뒀다 — Harbor 프로젝트 이름이
+# 다르면 image 필드만 바꾸면 된다.
+#
+# 태그 규칙: build-<이전 최고 버전 + 1> (예: 현재 Harbor에 build-13이 최신이면
+# 다음 배포는 build-14). latest처럼 롤백 추적이 안 되는 태그는 쓰지 않는다.
 #
 # imagePullSecrets(Harbor가 private 레지스트리인 경우 필요)는 현재 보류 —
 # 필요해지면 spec.template.spec에 아래를 추가한다.
@@ -18,7 +20,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: popup-chatbot-backend
-  namespace: default
+  namespace: back-ns
   labels:
     app: popup-chatbot-backend
 spec:
@@ -47,7 +49,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: backend
-          image: "<harbor-host>/<project>/popup-chatbot-backend:<tag>"
+          image: "192.168.0.236:8443/back-ns/popup-chatbot-backend:build-14"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
