@@ -14,16 +14,22 @@ metadata:
   name: popup-chatbot-backend-config
   namespace: default
 data:
-  # --- Redis (Kubernetes 내부 Service) ---
-  REDIS_HOST: "redis.default.svc.cluster.local"
+  # --- Redis (같은 클러스터의 cpu-cache-ns 네임스페이스에 이미 배포되어 있음, 인증 없음) ---
+  REDIS_HOST: "redis-svc.cpu-cache-ns.svc.cluster.local"
   REDIS_PORT: "6379"
   REDIS_TTL_SECONDS: "3600"
   REDIS_TIMEOUT_SECONDS: "1.5"
   CACHE_ENABLED: "true"
 
+  # --- MongoDB (같은 클러스터의 cpu-data-ns 네임스페이스에 이미 배포되어 있음, 인증 없음,
+  #     기존 운영 데이터가 이미 마이그레이션되어 있는 상태) ---
+  # 인증 정보가 없는 순수 접속 문자열이라 여기(비민감 ConfigMap)에 둔다.
+  # 나중에 인증이 추가되면 user:pass가 포함되므로 secret.yaml로 옮겨야 한다.
+  MONGODB_URI: "mongodb://mongodb-headless.cpu-data-ns.svc.cluster.local:27017"
+
   # --- Lambda (API Gateway 경유) ---
-  # sam deploy 결과로 나온 실제 API Gateway invoke URL로 교체한다.
-  LAMBDA_API_URL: "https://xxxxx.execute-api.ap-northeast-2.amazonaws.com/Prod/chat"
+  # 2026-07-30 sam deploy(stack: popup-chatbot)로 배포된 실제 invoke URL
+  LAMBDA_API_URL: "https://lcnlc3wive.execute-api.ap-northeast-2.amazonaws.com/Prod/chat"
   LAMBDA_TIMEOUT_SECONDS: "30"
 
   # --- AI Provider (레거시 /chatbot/search, /chatbot/ai-search 엔드포인트가 사용) ---

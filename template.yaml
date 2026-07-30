@@ -16,7 +16,9 @@ Description: 팝업스토어 AI 챗봇 - Lambda(AI 계층) + API Gateway
 Globals:
   Function:
     Runtime: python3.12
-    Timeout: 15 # OPENAI_TIMEOUT_SECONDS(기본 8초)보다 여유 있게. API Gateway REST API 하드 리밋은 29초.
+    # OPENAI_TIMEOUT_SECONDS(20초)보다 여유 있게. API Gateway REST API 하드 리밋은 29초라 25초로 설정.
+    # (실제 배포 후 결과 3건 요약 응답이 웜 상태에서도 8~11초 넘게 걸리는 것을 확인해서 상향 조정 — 2026-07-30)
+    Timeout: 25
     MemorySize: 512
 
 Parameters:
@@ -38,7 +40,7 @@ Resources:
         Variables:
           OPENAI_API_KEY: !Ref OpenAiApiKey
           OPENAI_MODEL: gpt-4.1-mini
-          OPENAI_TIMEOUT_SECONDS: "8"
+          OPENAI_TIMEOUT_SECONDS: "20"
           LOG_LEVEL: INFO
       Events:
         ChatApi:

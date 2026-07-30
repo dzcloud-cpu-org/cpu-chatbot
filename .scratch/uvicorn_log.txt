@@ -1,0 +1,27 @@
+INFO:     Started server process [5912]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8020 (Press CTRL+C to quit)
+AI_PROVIDER = openai
+EMBEDDING_PROVIDER = openai
+INFO:     127.0.0.1:55784 - "GET /health HTTP/1.1" 200 OK
+{"timestamp": "2026-07-30T19:04:11+0900", "level": "WARNING", "logger": "backend.services.redis_service", "message": "redis_get_failed", "event": "redis_get_failed", "error": ""}
+{"timestamp": "2026-07-30T19:04:11+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "check_cache", "event": "check_cache", "latency_ms": 1509.54, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:04:11+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "cache_miss", "event": "cache_miss", "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà", "cache_key": "chatbot:cache:c5718e23fd5c3b9a863f14410e3f6ce2c0ad8a7df42a50eeac5c6ddeb2d1d415"}
+{"timestamp": "2026-07-30T19:04:15+0900", "level": "INFO", "logger": "httpx", "message": "HTTP Request: POST https://api.openai.com/v1/embeddings \"HTTP/1.1 200 OK\""}
+{"timestamp": "2026-07-30T19:04:15+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "search_mongodb", "event": "search_mongodb", "latency_ms": 3878.74, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:04:15+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "mongo_search_complete", "event": "mongo_search_complete", "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà", "results_count": 3, "search_condition": {"intent": "recommend", "popup_name": null, "location": "È«´ë", "category": null, "purpose": null, "keywords": ["È«´ë", "ÇÏ"], "reservation": null, "operation": null, "information": null, "date_filter": null}}
+{"timestamp": "2026-07-30T19:04:26+0900", "level": "INFO", "logger": "httpx", "message": "HTTP Request: POST https://lcnlc3wive.execute-api.ap-northeast-2.amazonaws.com/Prod/chat \"HTTP/1.1 504 Gateway Timeout\""}
+{"timestamp": "2026-07-30T19:04:26+0900", "level": "INFO", "logger": "backend.services.lambda_client", "message": "lambda_invoke", "event": "lambda_invoke", "latency_ms": 11039.34, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:04:26+0900", "level": "ERROR", "logger": "backend.services.chatbot_service", "message": "lambda_call_failed", "error": "Lambda°¡ ¿À·ù¸¦ ¹ÝÈ¯Çß½À´Ï´Ù (status=504): {\"error\": {\"code\": \"LLM_TIMEOUT\", \"message\": \"OpenAI ÀÀ´äÀÌ 8.0ÃÊ ³»¿¡ µµÂøÇÏÁö ¾Ê¾Ò½À´Ï´Ù.\"}}", "code": "LAMBDA_INVOCATION_ERROR"}
+INFO:     127.0.0.1:55819 - "POST /chat HTTP/1.1" 200 OK
+{"timestamp": "2026-07-30T19:11:45+0900", "level": "WARNING", "logger": "backend.services.redis_service", "message": "redis_get_failed", "event": "redis_get_failed", "error": ""}
+{"timestamp": "2026-07-30T19:11:45+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "check_cache", "event": "check_cache", "latency_ms": 1503.16, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:11:45+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "cache_miss", "event": "cache_miss", "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà", "cache_key": "chatbot:cache:c5718e23fd5c3b9a863f14410e3f6ce2c0ad8a7df42a50eeac5c6ddeb2d1d415"}
+{"timestamp": "2026-07-30T19:11:46+0900", "level": "INFO", "logger": "httpx", "message": "HTTP Request: POST https://api.openai.com/v1/embeddings \"HTTP/1.1 200 OK\""}
+{"timestamp": "2026-07-30T19:11:46+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "search_mongodb", "event": "search_mongodb", "latency_ms": 1450.62, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:11:46+0900", "level": "INFO", "logger": "backend.services.chatbot_service", "message": "mongo_search_complete", "event": "mongo_search_complete", "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà", "results_count": 3, "search_condition": {"intent": "recommend", "popup_name": null, "location": "È«´ë", "category": null, "purpose": null, "keywords": ["È«´ë", "ÇÏ"], "reservation": null, "operation": null, "information": null, "date_filter": null}}
+{"timestamp": "2026-07-30T19:11:57+0900", "level": "INFO", "logger": "httpx", "message": "HTTP Request: POST https://lcnlc3wive.execute-api.ap-northeast-2.amazonaws.com/Prod/chat \"HTTP/1.1 504 Gateway Timeout\""}
+{"timestamp": "2026-07-30T19:11:57+0900", "level": "INFO", "logger": "backend.services.lambda_client", "message": "lambda_invoke", "event": "lambda_invoke", "latency_ms": 10969.14, "question": "È«´ë¿¡¼­ ÇÏ´Â ÆË¾÷ ¾Ë·ÁÁà"}
+{"timestamp": "2026-07-30T19:11:57+0900", "level": "ERROR", "logger": "backend.services.chatbot_service", "message": "lambda_call_failed", "error": "Lambda°¡ ¿À·ù¸¦ ¹ÝÈ¯Çß½À´Ï´Ù (status=504): {\"error\": {\"code\": \"LLM_TIMEOUT\", \"message\": \"OpenAI ÀÀ´äÀÌ 8.0ÃÊ ³»¿¡ µµÂøÇÏÁö ¾Ê¾Ò½À´Ï´Ù.\"}}", "code": "LAMBDA_INVOCATION_ERROR"}
+INFO:     127.0.0.1:55882 - "POST /chat HTTP/1.1" 200 OK

@@ -5,7 +5,7 @@ Description: "\uD31D\uC5C5\uC2A4\uD1A0\uC5B4 AI \uCC57\uBD07 - Lambda(AI \uACC4\
 Globals:
   Function:
     Runtime: python3.12
-    Timeout: 15
+    Timeout: 25
     MemorySize: 512
 Parameters:
   OpenAiApiKey:
@@ -27,7 +27,7 @@ Resources:
           OPENAI_API_KEY:
             Ref: OpenAiApiKey
           OPENAI_MODEL: gpt-4.1-mini
-          OPENAI_TIMEOUT_SECONDS: '8'
+          OPENAI_TIMEOUT_SECONDS: '20'
           LOG_LEVEL: INFO
       Events:
         ChatApi:
